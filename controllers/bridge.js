@@ -1,6 +1,18 @@
 const { ethers } = require("ethers");
 const artifact = require("../artifacts/rinkeby/MultiChainTestToken.json");
+const ADMIN_ADDRESS = "0xFD78F7E2dF2B8c3D5bff0413c96f3237500898B3";
 require('dotenv').config();
+
+const txnFlags = {
+    IDLE: 0,
+    WORKING: 1,
+    SUCCESS: 2,
+    FAILED: -1,
+    INVALID_REQUEST: -2
+}
+
+let txnStatus = txnFlags.IDLE;
+let errorMsg;
 
 const PROVIDERS = {
     4: process.env.ALCHEMY_RINKEBY,
@@ -18,16 +30,38 @@ const getAddress = (chainId) => {
     return TOKEN_ADDRESS[chainId];
 }
 
-const transferOutsideFrom = async (req, res) => {
+const transfer = async (req, res) => {
+    txnStatus = txnFlags.WORKING;
+    res.status(200).send(`${txnStatus}`);
+    const data = req.body;
+    transferOutsideFrom(data);
+}
+
+const sendStatus = async (req, res) => {
+    if(txnStatus === txnFlags.FAILED) {
+        res.status(409).send(`${errorMsg}`);
+    } else {
+        res.status(200).send(`${txnStatus}`);
+    }
+}
+
+const sendError = async (req, res) => {
+    res.status(409).send({ error: errorMsg });
+}
+
+const transferOutsideFrom = async (data) => {
+    // res.set('Access-Control-Allow-Origin', '*');
     try {
-        const data = req.body;
         console.log("received formdata: ", data);
         const chainId = data.chainId;
         const provider = new ethers.providers.JsonRpcProvider(`${PROVIDERS[chainId]}`);
-        const signer = new ethers.Wallet(process.env.ADMIN, provider);
+        const signer = new ethers.Wallet(process.env.ADMIN_PRIVATE_KEY, provider);
         const address = getAddress(chainId);
 
-        if(!address) return res.status(400).json({ message: "Invalid chainId." });
+        if(!address) {
+            txnStatus = txnFlags.INVALID_REQUEST;
+            return;
+        }
 
         const mctt = new ethers.Contract(address, artifact.abi, signer);
 
@@ -35,41 +69,66 @@ const transferOutsideFrom = async (req, res) => {
             console.log("here");
             let tx = await mctt.transferFrom(data.account, data.to, ethers.utils.parseEther(`${data.amount}`));
             const receipt = await tx.wait();
-            res.status(201).json({ hash: tx.hash });
+            txnStatus = txnFlags.SUCCESS;
+            //res.status(201).json({ hash: tx.hash });
         } else {
             let tx = await mctt.transferOutsideFrom(data.account, data.to, ethers.utils.parseEther(`${data.amount}`));
             const receipt = await tx.wait();
             console.log("hash: ", tx.hash);
             const topic = mctt.interface.getEventTopic('TransferOutside');
+            console.log("here 1");
             const logs = receipt.logs.find(x => x.topics.indexOf(topic) >= 0);
+            console.log("here 2");
             const event = mctt.interface.parseLog(logs);
+            console.log("here 3");
 
             if(logs) {
                 const hash = await receiveOutside(data.to_net, event.args[0], event.args[1], ethers.utils.formatEther(event.args[2]));
-                return res.status(201).json({ hash: hash});
+                //return res.status(201).json({ hash: tx.hash});
+                if(hash) txnStatus = txnFlags.SUCCESS;
             } 
         }
     } catch (error) {
         let errObject = Object.assign({}, error)
-        if(errObject.error) {
-            console.log("errobject: ", errObject.error);
-            const errorBody = JSON.parse(errObject.error.error.body);
-            console.log("errBody msg: ", errorBody.error.message);
-            res.statusMessage = errorBody.error.message;
-            res.status(409).send(`${errorBody.error.message}`);
-        }
+        // if(errObject.error) {
+        //     console.log("we're here");
+        //     //console.log(errObject.error);
+        //     res.status(409).json({ message: errObject.error.error.error });
+        // } else {
+        //     console.log("no we're here");
+        //     // console.log(error);
+        //     res.status(409).json({ message: error.code });
+        // }
+        console.log("errobject: ", errObject.error);
+        const errorBody = JSON.parse(errObject.error.error.body);
+        console.log("errBody msg: ", errorBody.error.message);
+        // res.statusMessage = errorBody.error.message;
+        // res.status(409).send(`${errorBody.error.message}`);
+        txnStatus = txnFlags.FAILED;
+        errorMsg = errorBody.error.message;
     }
 }
 
 const receiveOutside = async (to_net, from, to, amount) => {
-    const provider = new ethers.providers.JsonRpcProvider(`${PROVIDERS[to_net]}`);
-    const signer = new ethers.Wallet(process.env.ADMIN, provider);
-    const address = getAddress(to_net);
-    const mctt = new ethers.Contract(address, artifact.abi, signer);
-    const tx = await mctt.receiveOutside(from, to, ethers.utils.parseEther(`${amount}`));
-    const receipt = await tx.wait();
-    console.log("receipt outside: ", receipt.events);
-    return tx.hash;
+    try {
+        const provider = new ethers.providers.JsonRpcProvider(`${PROVIDERS[to_net]}`);
+        const signer = new ethers.Wallet(process.env.ADMIN_PRIVATE_KEY, provider);
+        const address = getAddress(to_net);
+        const mctt = new ethers.Contract(address, artifact.abi, signer);
+        const tx = await mctt.receiveOutside(from, to, ethers.utils.parseEther(`${amount}`));
+        const receipt = await tx.wait();
+        console.log("receipt outside: ", receipt.events);
+        return tx.hash;
+    } catch(error) {
+        let errObject = Object.assign({}, error);
+        console.log("errobject: ", errObject.error);
+        const errorBody = JSON.parse(errObject.error.error.body);
+        console.log("errBody msg: ", errorBody.error.message);
+        // res.statusMessage = errorBody.error.message;
+        // res.status(409).send(`${errorBody.error.message}`);
+        txnStatus = txnFlags.FAILED;
+        errorMsg = errorBody.error.message;
+    }
 }
 
-module.exports = { transferOutsideFrom };
+module.exports = { transfer, sendStatus, sendError };
