@@ -66,7 +66,6 @@ const transferOutsideFrom = async (data) => {
         const mctt = new ethers.Contract(address, artifact.abi, signer);
 
         if(chainId === data.to_net) {
-            console.log("here");
             let tx = await mctt.transferFrom(data.account, data.to, ethers.utils.parseEther(`${data.amount}`));
             const receipt = await tx.wait();
             txnStatus = txnFlags.SUCCESS;
@@ -76,11 +75,8 @@ const transferOutsideFrom = async (data) => {
             const receipt = await tx.wait();
             console.log("hash: ", tx.hash);
             const topic = mctt.interface.getEventTopic('TransferOutside');
-            console.log("here 1");
             const logs = receipt.logs.find(x => x.topics.indexOf(topic) >= 0);
-            console.log("here 2");
             const event = mctt.interface.parseLog(logs);
-            console.log("here 3");
 
             if(logs) {
                 const hash = await receiveOutside(data.to_net, event.args[0], event.args[1], ethers.utils.formatEther(event.args[2]));
@@ -90,20 +86,11 @@ const transferOutsideFrom = async (data) => {
         }
     } catch (error) {
         let errObject = Object.assign({}, error)
-        // if(errObject.error) {
-        //     console.log("we're here");
-        //     //console.log(errObject.error);
-        //     res.status(409).json({ message: errObject.error.error.error });
-        // } else {
-        //     console.log("no we're here");
-        //     // console.log(error);
-        //     res.status(409).json({ message: error.code });
-        // }
+        
         console.log("errobject: ", errObject.error);
         const errorBody = JSON.parse(errObject.error.error.body);
         console.log("errBody msg: ", errorBody.error.message);
-        // res.statusMessage = errorBody.error.message;
-        // res.status(409).send(`${errorBody.error.message}`);
+        
         txnStatus = txnFlags.FAILED;
         errorMsg = errorBody.error.message;
     }
@@ -124,8 +111,7 @@ const receiveOutside = async (to_net, from, to, amount) => {
         console.log("errobject: ", errObject.error);
         const errorBody = JSON.parse(errObject.error.error.body);
         console.log("errBody msg: ", errorBody.error.message);
-        // res.statusMessage = errorBody.error.message;
-        // res.status(409).send(`${errorBody.error.message}`);
+        
         txnStatus = txnFlags.FAILED;
         errorMsg = errorBody.error.message;
     }
