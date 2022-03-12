@@ -16,13 +16,14 @@ let errorMsg;
 
 const PROVIDERS = {
     4: process.env.ALCHEMY_RINKEBY,
-    3: process.env.ALCHEMY_ROPSTEN
+    3: process.env.ALCHEMY_ROPSTEN,
+    5: process.env.ALCHEMY_GOERLI
 }
 
 const TOKEN_ADDRESS = {
     4: "0x9e8dBC0d301825F190C2519C04eaf684739Bd070",
     3: "0x43Cf390bca8cCc836F737E0bf415936877ef9CFA",
-    5: "",
+    5: "0xfcC3D4301283f3520433CF3a9D038DB1a8e23272",
     42: "",
 }
 
